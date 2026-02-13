@@ -5,6 +5,7 @@ using System.Text;
 
 using TaxiSignalRBackend.WebAPI.Data;
 using TaxiSignalRBackend.WebAPI.Hubs;
+using TaxiSignalRBackend.WebAPI.Models;
 using TaxiSignalRBackend.WebAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,10 +15,16 @@ builder.WebHost.ConfigureKestrel(options =>
     options.ListenAnyIP(5091);
 });
 
+builder.Configuration
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite("Data Source=taxi.db"));
 
+builder.Services.Configure<IyzicoSettings>(builder.Configuration.GetSection("Iyzico"));
 
 builder.Services.AddCors(options =>
 {

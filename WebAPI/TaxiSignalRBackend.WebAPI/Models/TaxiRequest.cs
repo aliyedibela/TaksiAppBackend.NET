@@ -20,6 +20,53 @@ namespace TaxiSignalRBackend.WebAPI.Models
         public string? DriverPlate { get; set; }
     }
 
+    public class User
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Email { get; set; } = string.Empty;
+        public string PasswordHash { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string? PhoneNumber { get; set; }
+        public string? VerificationCode { get; set; }
+        public bool IsVerified { get; set; } = false;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public List<UserCard> Cards { get; set; } = new();
+    }
+
+    public class UserCard
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string UserId { get; set; } = string.Empty;
+        public string CardCode { get; set; } = string.Empty;
+        public string CardNickname { get; set; } = "Kartım";  
+        public decimal Balance { get; set; } = 0;
+        public DateTime AddedAt { get; set; } = DateTime.UtcNow;
+        public DateTime LastUsedAt { get; set; } = DateTime.UtcNow;
+
+        public User? User { get; set; }
+    }
+
+    public class PaymentTransaction
+    {
+        [Key]
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+
+        public string CardId { get; set; } = string.Empty;
+        public string UserId { get; set; } = string.Empty;
+
+        public decimal Amount { get; set; }
+        public string Description { get; set; } = "RFID Ödeme";
+
+        public decimal OldBalance { get; set; }
+        public decimal NewBalance { get; set; }
+
+        public string? DeviceId { get; set; } 
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public UserCard? Card { get; set; }
+        public User? User { get; set; }
+    }
     public class Driver
     {
         [Key]

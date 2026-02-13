@@ -16,14 +16,14 @@ namespace TaxiSignalRBackend.WebAPI.Services
         public async Task SendVerificationEmail(string toEmail, string code)
         {
             var message = new MimeMessage();
-            message.From.Add(new MailboxAddress("Erzurum Taksi", _config["Email:Username"]));
+            message.From.Add(new MailboxAddress("Erzurum BB App", _config["Email:Username"]));
             message.To.Add(new MailboxAddress("", toEmail));
             message.Subject = "Doğrulama Kodunuz";
 
             message.Body = new TextPart("html")
             {
                 Text = $@"
-                    <h2>Sürücü Hesabı Doğrulama</h2>
+                    <h2>Hesabınızı Doğrulama</h2>
                     <p>Doğrulama kodunuz: <strong>{code}</strong></p>
                     <p>Bu kodu uygulamaya girerek hesabınızı aktif edin.</p>
                 "

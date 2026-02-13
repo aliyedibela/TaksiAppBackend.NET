@@ -1,0 +1,358 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using TaxiSignalRBackend.WebAPI.Data;
+using TaxiSignalRBackend.WebAPI.Models;
+using TaxiSignalRBackend.WebAPI.Services;
+
+namespace TaxiSignalRBackend.WebAPI.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class UserController : ControllerBase
+    {
+        private readonly AppDbContext _db;
+        private readonly EmailService _emailService;
+        private readonly IConfiguration _config;
+
+        public UserController(AppDbContext db, EmailService emailService, IConfiguration config)
+        {
+            _db = db;
+            _emailService = emailService;
+            _config = config;
+        }
+
+        [HttpPost("signup")]
+        public async Task<IActionResult> Signup([FromBody] UserSignupRequest req)
+        {
+            try
+            {
+                Console.WriteLine($"👤 USER SIGNUP: {req.Email}");
+
+                var existing = await _db.Users.FirstOrDefaultAsync(u => u.Email == req.Email);
+                if (existing != null)
+                    return BadRequest(new { error = "Bu email zaten kayıtlı" });
+
+                var code = new Random().Next(100000, 999999).ToString();
+
+                var user = new User
+                {
+                    Email = req.Email,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
+                    FullName = req.FullName,
+                    PhoneNumber = req.PhoneNumber,
+                    VerificationCode = code,
+                    IsVerified = false
+                };
+
+                _db.Users.Add(user);
+                await _db.SaveChangesAsync();
+
+                try
+                {
+                    await _emailService.SendVerificationEmail(req.Email, code);
+                    Console.WriteLine($"✅ Doğrulama emaili gönderildi: {req.Email}");
+                }
+                catch (Exception emailEx)
+                {
+                    Console.WriteLine($"⚠️ Email gönderilemedi: {emailEx.Message}");
+                }
+
+                return Ok(new
+                {
+                    message = "Doğrulama kodu emailinize gönderildi",
+                    userId = user.Id,
+                    debugCode = code
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 SIGNUP HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+
+        [HttpPost("verify")]
+        public async Task<IActionResult> Verify([FromBody] UserVerifyRequest req)
+        {
+            try
+            {
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == req.UserId);
+                if (user == null) return NotFound(new { error = "Kullanıcı bulunamadı" });
+
+                if (user.VerificationCode != req.Code)
+                    return BadRequest(new { error = "Yanlış doğrulama kodu" });
+
+                user.IsVerified = true;
+                user.VerificationCode = null;
+                await _db.SaveChangesAsync();
+
+                Console.WriteLine($"✅ Kullanıcı doğrulandı: {user.Email}");
+                return Ok(new { message = "Hesap doğrulandı" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] UserLoginRequest req)
+        {
+            try
+            {
+                Console.WriteLine($"🔑 USER LOGIN: {req.Email}");
+
+                var user = await _db.Users
+                    .Include(u => u.Cards)
+                    .FirstOrDefaultAsync(u => u.Email == req.Email);
+
+                if (user == null)
+                    return Unauthorized(new { error = "Email veya şifre hatalı" });
+
+                if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
+                    return Unauthorized(new { error = "Email veya şifre hatalı" });
+
+                if (!user.IsVerified)
+                    return BadRequest(new { error = "Lütfen önce emailinizi doğrulayın" });
+
+                var token = GenerateJwtToken(user);
+
+                return Ok(new
+                {
+                    token,
+                    id = user.Id,
+                    email = user.Email,
+                    fullName = user.FullName,
+                    phoneNumber = user.PhoneNumber,
+                    isVerified = user.IsVerified,
+                    cards = user.Cards.Select(c => new {
+                        id = c.Id,
+                        userId = c.UserId,
+                        cardCode = c.CardCode,
+                        cardNickname = c.CardNickname,
+                        balance = c.Balance,
+                        addedAt = c.AddedAt,
+                        lastUsedAt = c.LastUsedAt
+                    })
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 LOGIN HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+
+        [HttpGet("{userId}")]
+        public async Task<IActionResult> GetProfile(string userId)
+        {
+            try
+            {
+                var user = await _db.Users
+                    .Include(u => u.Cards)
+                    .FirstOrDefaultAsync(u => u.Id == userId);
+
+                if (user == null)
+                    return NotFound(new { error = "Kullanıcı bulunamadı" });
+
+                return Ok(new
+                {
+                    id = user.Id,
+                    email = user.Email,
+                    fullName = user.FullName,
+                    phoneNumber = user.PhoneNumber,
+                    isVerified = user.IsVerified,
+                    createdAt = user.CreatedAt,
+                    cards = user.Cards.Select(c => new {
+                        id = c.Id,
+                        userId = c.UserId,
+                        cardCode = c.CardCode,
+                        cardNickname = c.CardNickname,
+                        balance = c.Balance,
+                        addedAt = c.AddedAt,
+                        lastUsedAt = c.LastUsedAt
+                    })
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 GET PROFILE HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+
+        private string GenerateJwtToken(User user)
+        {
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, user.Id),
+                new Claim(ClaimTypes.Email, user.Email),
+                new Claim("userType", "passenger")
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: _config["Jwt:Issuer"],
+                audience: _config["Jwt:Audience"],
+                claims: claims,
+                expires: DateTime.Now.AddDays(30),
+                signingCredentials: creds
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+    }
+
+
+    [ApiController]
+    [Route("api/[controller]")]
+    public class CardController : ControllerBase
+    {
+        private readonly AppDbContext _db;
+
+        public CardController(AppDbContext db) => _db = db;
+
+        [HttpPost("add")]
+        public async Task<IActionResult> AddCard([FromBody] AddCardRequest req)
+        {
+            try
+            {
+                var existing = await _db.UserCards.FirstOrDefaultAsync(c => c.CardCode == req.CardCode);
+                if (existing != null)
+                    return BadRequest(new { error = "Bu kart kodu zaten kayıtlı" });
+
+                var user = await _db.Users.FindAsync(req.UserId);
+                if (user == null) return NotFound(new { error = "Kullanıcı bulunamadı" });
+
+                var card = new UserCard
+                {
+                    UserId = req.UserId,
+                    CardCode = req.CardCode,
+                    CardNickname = req.CardNickname ?? "Kartım",
+                    Balance = 0
+                };
+
+                _db.UserCards.Add(card);
+                await _db.SaveChangesAsync();
+
+                Console.WriteLine($"💳 Kart eklendi: {req.CardCode} → {user.Email}");
+
+                return Ok(new
+                {
+                    message = "Kart başarıyla eklendi",
+                    card = new
+                    {
+                        id = card.Id,
+                        userId = card.UserId,
+                        cardCode = card.CardCode,
+                        cardNickname = card.CardNickname,
+                        balance = card.Balance,
+                        addedAt = card.AddedAt,
+                        lastUsedAt = card.LastUsedAt
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 ADD CARD HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("user/{userId}")]
+        public async Task<IActionResult> GetCards(string userId)
+        {
+            try
+            {
+                var cards = await _db.UserCards
+                    .Where(c => c.UserId == userId)
+                    .OrderByDescending(c => c.AddedAt)
+                    .ToListAsync();
+
+                return Ok(cards.Select(c => new {
+                    id = c.Id,
+                    userId = c.UserId,
+                    cardCode = c.CardCode,
+                    cardNickname = c.CardNickname,
+                    balance = c.Balance,
+                    addedAt = c.AddedAt,
+                    lastUsedAt = c.LastUsedAt
+                }));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 GET CARDS HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpDelete("{cardId}")]
+        public async Task<IActionResult> DeleteCard(string cardId, [FromQuery] string userId)
+        {
+            try
+            {
+                var card = await _db.UserCards.FirstOrDefaultAsync(
+                    c => c.Id == cardId && c.UserId == userId);
+
+                if (card == null)
+                    return NotFound(new { error = "Kart bulunamadı" });
+
+                _db.UserCards.Remove(card);
+                await _db.SaveChangesAsync();
+
+                Console.WriteLine($"🗑️ Kart silindi: {card.CardCode} (User: {userId})");
+
+                return Ok(new { message = "Kart silindi" });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 DELETE CARD HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("topup")]
+        public async Task<IActionResult> TopUp([FromBody] TopUpRequest req)
+        {
+            try
+            {
+                var card = await _db.UserCards.FirstOrDefaultAsync(c => c.CardCode == req.CardCode);
+                if (card == null) return NotFound(new { error = "Kart bulunamadı" });
+
+                card.Balance += req.Amount;
+                card.LastUsedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+
+                Console.WriteLine($"💰 Bakiye yüklendi: {req.CardCode} +{req.Amount}₺ → {card.Balance}₺");
+
+                return Ok(new
+                {
+                    message = "Bakiye yüklendi",
+                    newBalance = card.Balance
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 TOPUP HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+    }
+
+
+    public record UserSignupRequest(string Email, string Password, string FullName, string? PhoneNumber);
+    public record UserVerifyRequest(string UserId, string Code);
+    public record UserLoginRequest(string Email, string Password);
+    public record AddCardRequest(string UserId, string CardCode, string? CardNickname);
+    public record TopUpRequest(string CardCode, decimal Amount);
+}
