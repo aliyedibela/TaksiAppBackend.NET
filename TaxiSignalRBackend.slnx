@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/WebAPI/">
+    <Project Path="WebAPI/TaxiSignalRBackend.WebAPI/TaxiSignalRBackend.WebAPI.csproj" />
+  </Folder>
+</Solution>
