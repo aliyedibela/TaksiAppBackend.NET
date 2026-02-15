@@ -62,7 +62,7 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 {
                     CardId = card.Id,
                     UserId = card.UserId,
-                    Amount = req.Amount,
+                    Amount = -req.Amount,
                     Description = req.Description ?? "RFID Ödeme",
                     DeviceId = req.DeviceId,
                     OldBalance = oldBalance,
@@ -83,7 +83,7 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                     transactionId = transaction.Id,
                     cardNickname = card.CardNickname,
                     userName = card.User?.FullName ?? "Kullanıcı",
-                    amount = req.Amount,
+                    amount = -req.Amount,
                     oldBalance = oldBalance,
                     newBalance = card.Balance,
                     timestamp = transaction.CreatedAt
