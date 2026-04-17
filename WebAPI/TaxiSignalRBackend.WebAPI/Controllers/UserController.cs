@@ -108,20 +108,81 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             {
                 Console.WriteLine($"🔑 USER LOGIN: {req.Email}");
 
+                var ip = HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+                      ?? HttpContext.Connection.RemoteIpAddress?.ToString()
+                      ?? "unknown";
+
+                Console.WriteLine($"🌐 Giriş IP: {ip}");
+
+                // Brute force koruması
+                var failCount = await _db.LoginLogs.CountAsync(l =>
+                    l.IpAddress == ip &&
+                    !l.Success &&
+                    l.LoginAt > DateTime.UtcNow.AddMinutes(-15));
+
+                if (failCount >= 5)
+                {
+                    Console.WriteLine($"🚫 Brute force engellendi! IP: {ip}");
+                    return StatusCode(429, new { error = "Çok fazla hatalı giriş denemesi. 15 dakika bekleyin." });
+                }
+
                 var user = await _db.Users
                     .Include(u => u.Cards)
                     .FirstOrDefaultAsync(u => u.Email == req.Email);
 
                 if (user == null)
+                {
+                    await _db.LoginLogs.AddAsync(new LoginLog
+                    {
+                        IpAddress = ip,
+                        LoginAt = DateTime.UtcNow,
+                        Success = false,
+                        FailReason = "Kullanıcı bulunamadı"
+                    });
+                    await _db.SaveChangesAsync();
                     return Unauthorized(new { error = "Email veya şifre hatalı" });
+                }
 
                 if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
+                {
+                    await _db.LoginLogs.AddAsync(new LoginLog
+                    {
+                        UserId = user.Id,
+                        IpAddress = ip,
+                        LoginAt = DateTime.UtcNow,
+                        Success = false,
+                        FailReason = "Şifre yanlış"
+                    });
+                    await _db.SaveChangesAsync();
                     return Unauthorized(new { error = "Email veya şifre hatalı" });
+                }
 
                 if (!user.IsVerified)
+                {
+                    await _db.LoginLogs.AddAsync(new LoginLog
+                    {
+                        UserId = user.Id,
+                        IpAddress = ip,
+                        LoginAt = DateTime.UtcNow,
+                        Success = false,
+                        FailReason = "Hesap doğrulanmamış"
+                    });
+                    await _db.SaveChangesAsync();
                     return BadRequest(new { error = "Lütfen önce emailinizi doğrulayın" });
+                }
 
                 var token = GenerateJwtToken(user);
+
+                await _db.LoginLogs.AddAsync(new LoginLog
+                {
+                    UserId = user.Id,
+                    IpAddress = ip,
+                    LoginAt = DateTime.UtcNow,
+                    Success = true
+                });
+                await _db.SaveChangesAsync();
+
+                Console.WriteLine($"✅ USER GİRİŞ BAŞARILI: {user.Email}");
 
                 return Ok(new
                 {
@@ -148,7 +209,6 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 return StatusCode(500, new { error = ex.Message });
             }
         }
-
 
         [HttpGet("{userId}")]
         public async Task<IActionResult> GetProfile(string userId)

@@ -13,6 +13,7 @@ namespace TaxiSignalRBackend.WebAPI.Data
         public DbSet<User> Users { get; set; }
         public DbSet<UserCard> UserCards { get; set; }
 
+        public DbSet<LoginLog> LoginLogs { get; set; }
         public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

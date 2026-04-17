@@ -38,9 +38,8 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 Console.WriteLine($"🚗 Plaka: {req.VehiclePlate}");
                 Console.WriteLine($"⏰ Zaman: {DateTime.Now:HH:mm:ss}");
                 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                Console.WriteLine("🔍 Email kontrolü yapılıyor...");
-                var existingDriver = await _db.Drivers.FirstOrDefaultAsync(d => d.Email == req.Email);
 
+                var existingDriver = await _db.Drivers.FirstOrDefaultAsync(d => d.Email == req.Email);
                 if (existingDriver != null)
                 {
                     Console.WriteLine($"❌ HATA: Bu email zaten kayıtlı! Driver ID: {existingDriver.Id}");
@@ -51,7 +50,6 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 var code = new Random().Next(100000, 999999).ToString();
                 Console.WriteLine($"🔐 Doğrulama kodu oluşturuldu: {code}");
 
-                Console.WriteLine("👤 Driver nesnesi oluşturuluyor...");
                 var driver = new Driver
                 {
                     Email = req.Email,
@@ -63,14 +61,11 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                     VerificationCode = code,
                     IsVerified = false
                 };
-                Console.WriteLine($"✅ Driver nesnesi oluşturuldu. ID: {driver.Id}");
 
-                Console.WriteLine("💾 Veritabanına kaydediliyor...");
                 _db.Drivers.Add(driver);
                 await _db.SaveChangesAsync();
                 Console.WriteLine($"✅ Veritabanına kaydedildi. Driver ID: {driver.Id}");
 
-                Console.WriteLine("📧 Email gönderiliyor...");
                 try
                 {
                     await _emailService.SendVerificationEmail(req.Email, code);
@@ -79,13 +74,10 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 catch (Exception emailEx)
                 {
                     Console.WriteLine($"⚠️ EMAIL GÖNDERİMİ BAŞARISIZ: {emailEx.Message}");
-                    Console.WriteLine($"⚠️ Ancak kayıt tamamlandı. Kullanıcı kodu manuel girebilir: {code}");
+                    Console.WriteLine($"⚠️ Debug kodu: {code}");
                 }
 
-                Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                 Console.WriteLine("✅ KAYIT BAŞARIYLA TAMAMLANDI!");
-                Console.WriteLine($"🆔 Driver ID: {driver.Id}");
-                Console.WriteLine($"🔐 Doğrulama Kodu: {code}");
                 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
                 return Ok(new
@@ -97,21 +89,12 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             }
             catch (DbUpdateException dbEx)
             {
-                Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                Console.WriteLine($"💥 VERİTABANI HATASI:");
-                Console.WriteLine($"❌ Message: {dbEx.Message}");
-                Console.WriteLine($"❌ Inner Exception: {dbEx.InnerException?.Message}");
-                Console.WriteLine($"❌ Stack Trace: {dbEx.StackTrace}");
-                Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                Console.WriteLine($"💥 VERİTABANI HATASI: {dbEx.InnerException?.Message ?? dbEx.Message}");
                 return StatusCode(500, new { error = $"Veritabanı hatası: {dbEx.InnerException?.Message ?? dbEx.Message}" });
             }
             catch (Exception ex)
             {
-                Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                Console.WriteLine($"💥 GENEL HATA:");
-                Console.WriteLine($"❌ Message: {ex.Message}");
-                Console.WriteLine($"❌ Stack Trace: {ex.StackTrace}");
-                Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                Console.WriteLine($"💥 GENEL HATA: {ex.Message}");
                 return StatusCode(500, new { error = $"Sunucu hatası: {ex.Message}" });
             }
         }
@@ -128,16 +111,11 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
                 var driver = await _db.Drivers.FirstOrDefaultAsync(d => d.Id == req.DriverId);
-
                 if (driver == null)
                 {
                     Console.WriteLine("❌ Sürücü bulunamadı");
                     return NotFound(new { error = "Sürücü bulunamadı" });
                 }
-
-                Console.WriteLine($"✅ Sürücü bulundu: {driver.DriverName}");
-                Console.WriteLine($"🔐 Kayıtlı kod: {driver.VerificationCode}");
-                Console.WriteLine($"🔐 Gelen kod: {req.Code}");
 
                 if (driver.VerificationCode != req.Code)
                 {
@@ -145,7 +123,6 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                     return BadRequest(new { error = "Yanlış kod" });
                 }
 
-                Console.WriteLine("✅ Kod doğru! Hesap onaylanıyor...");
                 driver.IsVerified = true;
                 driver.VerificationCode = null;
                 await _db.SaveChangesAsync();
@@ -158,7 +135,6 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             catch (Exception ex)
             {
                 Console.WriteLine($"💥 VERIFY HATASI: {ex.Message}");
-                Console.WriteLine($"📍 Stack Trace: {ex.StackTrace}");
                 return StatusCode(500, new { error = ex.Message });
             }
         }
@@ -173,11 +149,36 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 Console.WriteLine($"📧 Email: {req.Email}");
                 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-                var driver = await _db.Drivers.FirstOrDefaultAsync(d => d.Email == req.Email);
+                // IP al — ngrok/proxy arkasındaysa X-Forwarded-For önce gelir
+                var ip = HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+                      ?? HttpContext.Connection.RemoteIpAddress?.ToString()
+                      ?? "unknown";
+                Console.WriteLine($"🌐 Giriş IP: {ip}");
 
+                // 🔒 Brute force koruması — 15 dk içinde 5 başarısız deneme
+                var failCount = await _db.LoginLogs.CountAsync(l =>
+                    l.IpAddress == ip &&
+                    !l.Success &&
+                    l.LoginAt > DateTime.UtcNow.AddMinutes(-15));
+
+                if (failCount >= 5)
+                {
+                    Console.WriteLine($"🚫 Brute force engellendi! IP: {ip} ({failCount} başarısız deneme)");
+                    return StatusCode(429, new { error = "Çok fazla hatalı giriş denemesi. 15 dakika bekleyin." });
+                }
+
+                var driver = await _db.Drivers.FirstOrDefaultAsync(d => d.Email == req.Email);
                 if (driver == null)
                 {
                     Console.WriteLine("❌ Kullanıcı bulunamadı");
+                    await _db.LoginLogs.AddAsync(new LoginLog
+                    {
+                        IpAddress = ip,
+                        LoginAt = DateTime.UtcNow,
+                        Success = false,
+                        FailReason = "Kullanıcı bulunamadı"
+                    });
+                    await _db.SaveChangesAsync();
                     return Unauthorized(new { error = "Email veya şifre hatalı" });
                 }
 
@@ -186,19 +187,43 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 if (!BCrypt.Net.BCrypt.Verify(req.Password, driver.PasswordHash))
                 {
                     Console.WriteLine("❌ Şifre yanlış");
+                    await _db.LoginLogs.AddAsync(new LoginLog
+                    {
+                        DriverId = driver.Id,
+                        IpAddress = ip,
+                        LoginAt = DateTime.UtcNow,
+                        Success = false,
+                        FailReason = "Şifre yanlış"
+                    });
+                    await _db.SaveChangesAsync();
                     return Unauthorized(new { error = "Email veya şifre hatalı" });
                 }
-
-                Console.WriteLine("✅ Şifre doğru");
 
                 if (!driver.IsVerified)
                 {
                     Console.WriteLine("❌ Hesap doğrulanmamış");
+                    await _db.LoginLogs.AddAsync(new LoginLog
+                    {
+                        DriverId = driver.Id,
+                        IpAddress = ip,
+                        LoginAt = DateTime.UtcNow,
+                        Success = false,
+                        FailReason = "Hesap doğrulanmamış"
+                    });
+                    await _db.SaveChangesAsync();
                     return BadRequest(new { error = "Lütfen önce emailinizi doğrulayın" });
                 }
 
-                Console.WriteLine("✅ Hesap doğrulanmış. Token oluşturuluyor...");
+                // ✅ Başarılı giriş
                 var token = GenerateJwtToken(driver);
+                await _db.LoginLogs.AddAsync(new LoginLog
+                {
+                    DriverId = driver.Id,
+                    IpAddress = ip,
+                    LoginAt = DateTime.UtcNow,
+                    Success = true
+                });
+                await _db.SaveChangesAsync();
 
                 Console.WriteLine("✅ GİRİŞ BAŞARILI!");
                 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -216,7 +241,6 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             catch (Exception ex)
             {
                 Console.WriteLine($"💥 LOGIN HATASI: {ex.Message}");
-                Console.WriteLine($"📍 Stack Trace: {ex.StackTrace}");
                 return StatusCode(500, new { error = ex.Message });
             }
         }
