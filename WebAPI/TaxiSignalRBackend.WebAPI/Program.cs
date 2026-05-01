@@ -12,7 +12,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.ListenAnyIP(5091);
+    var port = int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "5091");
+    options.ListenAnyIP(port);
 });
 
 builder.Configuration
@@ -22,7 +23,7 @@ builder.Configuration
     .AddEnvironmentVariables();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=taxi.db"));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.Configure<IyzicoSettings>(builder.Configuration.GetSection("Iyzico"));
 
@@ -76,15 +77,12 @@ using (var scope = app.Services.CreateScope())
 }
 
 
-if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "TaxiSignalRBackend API V1");
-        c.RoutePrefix = string.Empty;
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "TaxiSignalRBackend API V1");
+    c.RoutePrefix = string.Empty;
+});
 
 app.UseCors("AllowAll");
 app.UseAuthentication();
