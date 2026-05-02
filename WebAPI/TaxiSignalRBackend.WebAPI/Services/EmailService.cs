@@ -64,7 +64,7 @@ namespace TaxiSignalRBackend.WebAPI.Services
                 {
                     new { to = new[] { new { email = toEmail } } }
                 },
-                from = new { email = "noreply@" + (_config["Email:Username"]?.Split('@').LastOrDefault() ?? "gmail.com"), name = "Erzurum BB App" },
+                from = new { email = _config["Email:Username"] ?? "historyeditorali@gmail.com", name = "Erzurum BB App" },
                 subject = "Doğrulama Kodunuz",
                 content = new[]
                 {
