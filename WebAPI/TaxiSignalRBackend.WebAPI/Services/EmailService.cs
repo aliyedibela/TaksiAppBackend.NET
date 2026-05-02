@@ -1,12 +1,13 @@
-﻿using MailKit.Net.Smtp;
-using MailKit.Security;
-using MimeKit;
+﻿using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace TaxiSignalRBackend.WebAPI.Services
 {
     public class EmailService
     {
         private readonly IConfiguration _config;
+        private static readonly HttpClient _http = new HttpClient();
 
         public EmailService(IConfiguration config)
         {
@@ -15,25 +16,68 @@ namespace TaxiSignalRBackend.WebAPI.Services
 
         public async Task SendVerificationEmail(string toEmail, string code)
         {
-            var message = new MimeMessage();
-            message.From.Add(new MailboxAddress("Erzurum BB App", _config["Email:Username"]));
-            message.To.Add(new MailboxAddress("", toEmail));
-            message.Subject = "Doğrulama Kodunuz";
+            var resendKey = _config["Resend:ApiKey"];
 
-            message.Body = new TextPart("html")
+            if (!string.IsNullOrEmpty(resendKey) && resendKey != "YOUR_RESEND_API_KEY")
             {
-                Text = $@"
-                    <h2>Hesabınızı Doğrulama</h2>
-                    <p>Doğrulama kodunuz: <strong>{code}</strong></p>
-                    <p>Bu kodu uygulamaya girerek hesabınızı aktif edin.</p>
-                "
+                await SendViaResend(toEmail, code, resendKey);
+            }
+            else
+            {
+                await SendViaSmtp(toEmail, code);
+            }
+        }
+
+        private async Task SendViaResend(string toEmail, string code, string apiKey)
+        {
+            var payload = new
+            {
+                from = "Erzurum BB App <noreply@resend.dev>",
+                to = new[] { toEmail },
+                subject = "Doğrulama Kodunuz",
+                html = $@"
+                    <div style='font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f5f5f5;border-radius:12px;'>
+                      <h2 style='color:#1A237E;'>Hesabınızı Doğrulayın</h2>
+                      <p>Doğrulama kodunuz:</p>
+                      <div style='font-size:36px;font-weight:bold;letter-spacing:8px;color:#0D47A1;padding:16px;background:#fff;border-radius:8px;text-align:center;'>{code}</div>
+                      <p style='color:#666;font-size:12px;margin-top:16px;'>Bu kodu kimseyle paylaşmayın. 15 dakika geçerlidir.</p>
+                    </div>"
             };
 
-            using var client = new SmtpClient();
-            await client.ConnectAsync(_config["Email:Host"], int.Parse(_config["Email:Port"]), SecureSocketOptions.StartTls);
-            await client.AuthenticateAsync(_config["Email:Username"], _config["Email:Password"]);
-            await client.SendAsync(message);
-            await client.DisconnectAsync(true);
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            var response = await _http.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                throw new Exception($"Resend API hatası: {response.StatusCode} — {body}");
+
+            Console.WriteLine($"✅ Resend ile email gönderildi: {toEmail}");
+        }
+
+        private async Task SendViaSmtp(string toEmail, string code)
+        {
+            // SMTP fallback (Railway'de çalışmayabilir)
+            using var client = new System.Net.Mail.SmtpClient(_config["Email:Host"], int.Parse(_config["Email:Port"] ?? "587"))
+            {
+                Credentials = new System.Net.NetworkCredential(_config["Email:Username"], _config["Email:Password"]),
+                EnableSsl = true,
+                Timeout = 10000
+            };
+
+            var mail = new System.Net.Mail.MailMessage
+            {
+                From = new System.Net.Mail.MailAddress(_config["Email:Username"]!, "Erzurum BB App"),
+                Subject = "Doğrulama Kodunuz",
+                Body = $"<h2>Doğrulama Kodunuz: <strong>{code}</strong></h2>",
+                IsBodyHtml = true
+            };
+            mail.To.Add(toEmail);
+
+            await client.SendMailAsync(mail);
+            Console.WriteLine($"✅ SMTP ile email gönderildi: {toEmail}");
         }
     }
 }
