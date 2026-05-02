@@ -51,15 +51,19 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 _db.Users.Add(user);
                 await _db.SaveChangesAsync();
 
-                try
+                // Email gönderimini background'da yap — HTTP response beklemeden döner
+                _ = Task.Run(async () =>
                 {
-                    await _emailService.SendVerificationEmail(req.Email, code);
-                    Console.WriteLine($"✅ Doğrulama emaili gönderildi: {req.Email}");
-                }
-                catch (Exception emailEx)
-                {
-                    Console.WriteLine($"⚠️ Email gönderilemedi: {emailEx.Message}");
-                }
+                    try
+                    {
+                        await _emailService.SendVerificationEmail(req.Email, code);
+                        Console.WriteLine($"✅ Doğrulama emaili gönderildi: {req.Email}");
+                    }
+                    catch (Exception emailEx)
+                    {
+                        Console.WriteLine($"⚠️ Email gönderilemedi: {emailEx.Message}");
+                    }
+                });
 
                 return Ok(new
                 {
