@@ -64,7 +64,7 @@ namespace TaxiSignalRBackend.WebAPI.Services
                 {
                     new { to = new[] { new { email = toEmail } } }
                 },
-                from = new { email = _config["Email:Username"] ?? "historyeditorali@gmail.com", name = "Erzurum BB App" },
+                from = new { email = _config["SendGrid:FromEmail"] ?? _config["Email:Username"] ?? "erzbbappetu@gmail.com", name = "Erzurum BB App" },
                 subject = "Doğrulama Kodunuz",
                 content = new[]
                 {
