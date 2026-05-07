@@ -1,4 +1,8 @@
-﻿namespace TaxiSignalRBackend.WebAPI.Services
+﻿using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
+
+namespace TaxiSignalRBackend.WebAPI.Services
 {
     public class EmailService
     {
@@ -14,28 +18,28 @@
             var host     = _config["Email:Host"]     ?? "smtp.gmail.com";
             var port     = int.Parse(_config["Email:Port"] ?? "587");
             var username = _config["Email:Username"] ?? throw new Exception("Email:Username ayarlanmamış");
-            var password = _config["Email:Password"] ?? throw new Exception("Email:Password ayarlanmamış");
+            // Şifredeki boşlukları temizle (Google App Password boşluklu girilebilir)
+            var password = (_config["Email:Password"] ?? throw new Exception("Email:Password ayarlanmamış")).Replace(" ", "");
 
-            Console.WriteLine($"📧 Gmail SMTP ile email gönderiliyor → {toEmail}");
+            Console.WriteLine($"📧 SMTP bağlantısı → {host}:{port} ({username})");
 
-            using var client = new System.Net.Mail.SmtpClient(host, port)
-            {
-                Credentials = new System.Net.NetworkCredential(username, password),
-                EnableSsl   = true,
-                Timeout     = 15000
-            };
+            var message = new MimeMessage();
+            message.From.Add(new MailboxAddress("Erzurum BB App", username));
+            message.To.Add(new MailboxAddress(toEmail, toEmail));
+            message.Subject = "Doğrulama Kodunuz";
+            message.Body = new TextPart("html") { Text = BuildHtml(code) };
 
-            var mail = new System.Net.Mail.MailMessage
-            {
-                From       = new System.Net.Mail.MailAddress(username, "Erzurum BB App"),
-                Subject    = "Doğrulama Kodunuz",
-                Body       = BuildHtml(code),
-                IsBodyHtml = true
-            };
-            mail.To.Add(toEmail);
+            using var client = new SmtpClient();
+            await client.ConnectAsync(host, port, SecureSocketOptions.StartTls);
+            Console.WriteLine("✅ SMTP bağlantısı kuruldu");
 
-            await client.SendMailAsync(mail);
-            Console.WriteLine($"✅ Gmail SMTP ile email gönderildi: {toEmail}");
+            await client.AuthenticateAsync(username, password);
+            Console.WriteLine("✅ SMTP kimlik doğrulandı");
+
+            await client.SendAsync(message);
+            await client.DisconnectAsync(true);
+
+            Console.WriteLine($"✅ Email gönderildi: {toEmail}");
         }
 
         private static string BuildHtml(string code) => $@"
