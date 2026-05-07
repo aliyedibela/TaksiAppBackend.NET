@@ -214,6 +214,53 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             }
         }
 
+        // ─── ADMIN: Tüm kullanıcıları listele ───
+        // GET /api/user/all?secret=admin123
+        [HttpGet("all")]
+        public async Task<IActionResult> GetAllUsers([FromQuery] string secret)
+        {
+            var adminSecret = _config["Admin:Secret"] ?? "admin123";
+            if (secret != adminSecret)
+                return Unauthorized(new { error = "Geçersiz admin anahtarı" });
+
+            try
+            {
+                var users = await _db.Users
+                    .Include(u => u.Cards)
+                    .OrderByDescending(u => u.CreatedAt)
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    total = users.Count,
+                    verified = users.Count(u => u.IsVerified),
+                    unverified = users.Count(u => !u.IsVerified),
+                    users = users.Select(u => new
+                    {
+                        id = u.Id,
+                        fullName = u.FullName,
+                        email = u.Email,
+                        phoneNumber = u.PhoneNumber,
+                        isVerified = u.IsVerified,
+                        createdAt = u.CreatedAt,
+                        cardCount = u.Cards.Count,
+                        cards = u.Cards.Select(c => new
+                        {
+                            cardCode = c.CardCode,
+                            cardNickname = c.CardNickname,
+                            balance = c.Balance,
+                            addedAt = c.AddedAt
+                        })
+                    })
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 GET ALL USERS HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
         [HttpGet("{userId}")]
         public async Task<IActionResult> GetProfile(string userId)
         {
