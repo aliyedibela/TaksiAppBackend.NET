@@ -1,13 +1,8 @@
-﻿using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
-
-namespace TaxiSignalRBackend.WebAPI.Services
+﻿namespace TaxiSignalRBackend.WebAPI.Services
 {
     public class EmailService
     {
         private readonly IConfiguration _config;
-        private static readonly HttpClient _http = new HttpClient();
 
         public EmailService(IConfiguration config)
         {
@@ -16,74 +11,31 @@ namespace TaxiSignalRBackend.WebAPI.Services
 
         public async Task SendVerificationEmail(string toEmail, string code)
         {
-            var sendGridKey = _config["SendGrid:ApiKey"];
-            var resendKey   = _config["Resend:ApiKey"];
+            var host     = _config["Email:Host"]     ?? "smtp.gmail.com";
+            var port     = int.Parse(_config["Email:Port"] ?? "587");
+            var username = _config["Email:Username"] ?? throw new Exception("Email:Username ayarlanmamış");
+            var password = _config["Email:Password"] ?? throw new Exception("Email:Password ayarlanmamış");
 
-            if (!string.IsNullOrEmpty(sendGridKey))
-            {
-                await SendViaSendGrid(toEmail, code, sendGridKey);
-            }
-            else if (!string.IsNullOrEmpty(resendKey) && resendKey != "YOUR_RESEND_API_KEY")
-            {
-                await SendViaResend(toEmail, code, resendKey);
-            }
-            else
-            {
-                await SendViaSmtp(toEmail, code);
-            }
-        }
+            Console.WriteLine($"📧 Gmail SMTP ile email gönderiliyor → {toEmail}");
 
-        private async Task SendViaResend(string toEmail, string code, string apiKey)
-        {
-            var payload = new
+            using var client = new System.Net.Mail.SmtpClient(host, port)
             {
-                from = "Erzurum BB App <noreply@resend.dev>",
-                to = new[] { toEmail },
-                subject = "Doğrulama Kodunuz",
-                html = BuildHtml(code)
+                Credentials = new System.Net.NetworkCredential(username, password),
+                EnableSsl   = true,
+                Timeout     = 15000
             };
 
-            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-            var response = await _http.SendAsync(request);
-            var body = await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
-                throw new Exception($"Resend API hatası: {response.StatusCode} — {body}");
-
-            Console.WriteLine($"✅ Resend ile email gönderildi: {toEmail}");
-        }
-
-        private async Task SendViaSendGrid(string toEmail, string code, string apiKey)
-        {
-            var payload = new
+            var mail = new System.Net.Mail.MailMessage
             {
-                personalizations = new[]
-                {
-                    new { to = new[] { new { email = toEmail } } }
-                },
-                from = new { email = _config["SendGrid:FromEmail"] ?? _config["Email:Username"] ?? "erzbbappetu@gmail.com", name = "Erzurum BB App" },
-                subject = "Doğrulama Kodunuz",
-                content = new[]
-                {
-                    new { type = "text/html", value = BuildHtml(code) }
-                }
+                From       = new System.Net.Mail.MailAddress(username, "Erzurum BB App"),
+                Subject    = "Doğrulama Kodunuz",
+                Body       = BuildHtml(code),
+                IsBodyHtml = true
             };
+            mail.To.Add(toEmail);
 
-            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.sendgrid.com/v3/mail/send");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-            var response = await _http.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync();
-                throw new Exception($"SendGrid hatası: {response.StatusCode} — {body}");
-            }
-
-            Console.WriteLine($"✅ SendGrid ile email gönderildi: {toEmail}");
+            await client.SendMailAsync(mail);
+            Console.WriteLine($"✅ Gmail SMTP ile email gönderildi: {toEmail}");
         }
 
         private static string BuildHtml(string code) => $@"
@@ -93,28 +45,5 @@ namespace TaxiSignalRBackend.WebAPI.Services
               <div style='font-size:36px;font-weight:bold;letter-spacing:8px;color:#0D47A1;padding:16px;background:#fff;border-radius:8px;text-align:center;'>{code}</div>
               <p style='color:#666;font-size:12px;margin-top:16px;'>Bu kodu kimseyle paylaşmayın. 15 dakika geçerlidir.</p>
             </div>";
-
-        private async Task SendViaSmtp(string toEmail, string code)
-        {
-            // SMTP fallback (Railway'de çalışmayabilir)
-            using var client = new System.Net.Mail.SmtpClient(_config["Email:Host"], int.Parse(_config["Email:Port"] ?? "587"))
-            {
-                Credentials = new System.Net.NetworkCredential(_config["Email:Username"], _config["Email:Password"]),
-                EnableSsl = true,
-                Timeout = 10000
-            };
-
-            var mail = new System.Net.Mail.MailMessage
-            {
-                From = new System.Net.Mail.MailAddress(_config["Email:Username"]!, "Erzurum BB App"),
-                Subject = "Doğrulama Kodunuz",
-                Body = $"<h2>Doğrulama Kodunuz: <strong>{code}</strong></h2>",
-                IsBodyHtml = true
-            };
-            mail.To.Add(toEmail);
-
-            await client.SendMailAsync(mail);
-            Console.WriteLine($"✅ SMTP ile email gönderildi: {toEmail}");
-        }
     }
 }
