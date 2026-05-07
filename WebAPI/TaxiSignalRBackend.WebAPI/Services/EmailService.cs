@@ -16,10 +16,19 @@ namespace TaxiSignalRBackend.WebAPI.Services
 
         public async Task SendVerificationEmail(string toEmail, string code)
         {
-            var clientId     = _config["Gmail:ClientId"]     ?? throw new Exception("Gmail:ClientId eksik");
-            var clientSecret = _config["Gmail:ClientSecret"] ?? throw new Exception("Gmail:ClientSecret eksik");
-            var refreshToken = _config["Gmail:RefreshToken"] ?? throw new Exception("Gmail:RefreshToken eksik");
-            var fromEmail    = _config["Gmail:FromEmail"]    ?? "erzurumbbappetu@gmail.com";
+            // Önce düz env var adından oku (Railway uyumlu), yoksa nested config'e bak
+            var clientId     = Environment.GetEnvironmentVariable("GMAIL_CLIENT_ID")
+                            ?? _config["Gmail:ClientId"]
+                            ?? throw new Exception("GMAIL_CLIENT_ID eksik");
+            var clientSecret = Environment.GetEnvironmentVariable("GMAIL_CLIENT_SECRET")
+                            ?? _config["Gmail:ClientSecret"]
+                            ?? throw new Exception("GMAIL_CLIENT_SECRET eksik");
+            var refreshToken = Environment.GetEnvironmentVariable("GMAIL_REFRESH_TOKEN")
+                            ?? _config["Gmail:RefreshToken"]
+                            ?? throw new Exception("GMAIL_REFRESH_TOKEN eksik");
+            var fromEmail    = Environment.GetEnvironmentVariable("GMAIL_FROM_EMAIL")
+                            ?? _config["Gmail:FromEmail"]
+                            ?? "erzurumbbappetu@gmail.com";
 
             Console.WriteLine($"📧 Gmail API ile email gönderiliyor → {toEmail}");
 
