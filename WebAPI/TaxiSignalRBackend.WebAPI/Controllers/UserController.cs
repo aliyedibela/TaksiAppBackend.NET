@@ -228,6 +228,9 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 var user = await _db.Users.Include(u => u.Cards).FirstOrDefaultAsync(u => u.Id == userId);
                 if (user == null) return NotFound(new { error = "Kullanıcı bulunamadı" });
 
+                // Önce bağlı kayıtları sil
+                var logs = _db.LoginLogs.Where(l => l.UserId == userId);
+                _db.LoginLogs.RemoveRange(logs);
                 _db.UserCards.RemoveRange(user.Cards);
                 _db.Users.Remove(user);
                 await _db.SaveChangesAsync();
@@ -257,6 +260,8 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             try
             {
                 var count = await _db.Users.CountAsync();
+                // Foreign key bağımlılıklarını sırayla sil
+                _db.LoginLogs.RemoveRange(_db.LoginLogs);
                 _db.UserCards.RemoveRange(_db.UserCards);
                 _db.Users.RemoveRange(_db.Users);
                 await _db.SaveChangesAsync();
