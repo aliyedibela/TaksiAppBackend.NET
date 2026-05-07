@@ -214,6 +214,63 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             }
         }
 
+        // ─── ADMIN: Belirli kullanıcıyı sil ───
+        // DELETE /api/user/delete/{userId}?secret=admin123
+        [HttpDelete("delete/{userId}")]
+        public async Task<IActionResult> DeleteUser(string userId, [FromQuery] string secret)
+        {
+            var adminSecret = _config["Admin:Secret"] ?? "admin123";
+            if (secret != adminSecret)
+                return Unauthorized(new { error = "Geçersiz admin anahtarı" });
+
+            try
+            {
+                var user = await _db.Users.Include(u => u.Cards).FirstOrDefaultAsync(u => u.Id == userId);
+                if (user == null) return NotFound(new { error = "Kullanıcı bulunamadı" });
+
+                _db.UserCards.RemoveRange(user.Cards);
+                _db.Users.Remove(user);
+                await _db.SaveChangesAsync();
+
+                Console.WriteLine($"🗑️ ADMIN: Kullanıcı silindi: {user.Email}");
+                return Ok(new { message = $"{user.Email} silindi" });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 DELETE USER HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        // ─── ADMIN: Tüm kullanıcıları sil (DİKKAT!) ───
+        // DELETE /api/user/delete-all?secret=admin123&confirm=EVET
+        [HttpDelete("delete-all")]
+        public async Task<IActionResult> DeleteAllUsers([FromQuery] string secret, [FromQuery] string confirm)
+        {
+            var adminSecret = _config["Admin:Secret"] ?? "admin123";
+            if (secret != adminSecret)
+                return Unauthorized(new { error = "Geçersiz admin anahtarı" });
+
+            if (confirm != "EVET")
+                return BadRequest(new { error = "Onaylamak için confirm=EVET ekle" });
+
+            try
+            {
+                var count = await _db.Users.CountAsync();
+                _db.UserCards.RemoveRange(_db.UserCards);
+                _db.Users.RemoveRange(_db.Users);
+                await _db.SaveChangesAsync();
+
+                Console.WriteLine($"🗑️ ADMIN: Tüm kullanıcılar silindi ({count} kişi)");
+                return Ok(new { message = $"Tüm {count} kullanıcı silindi" });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 DELETE ALL USERS HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
         // ─── ADMIN: Tüm kullanıcıları listele ───
         // GET /api/user/all?secret=admin123
         [HttpGet("all")]
