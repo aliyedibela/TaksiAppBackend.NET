@@ -143,6 +143,34 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             }
         }
 
+        [HttpPost("resend-code")]
+        public async Task<IActionResult> ResendCode([FromBody] ResendDriverCodeRequest req)
+        {
+            try
+            {
+                var driver = await _db.Drivers.FirstOrDefaultAsync(d => d.Id == req.DriverId);
+                if (driver == null) return NotFound(new { error = "Sürücü bulunamadı" });
+                if (driver.IsVerified) return BadRequest(new { error = "Hesap zaten doğrulanmış" });
+
+                var newCode = new Random().Next(100000, 999999).ToString();
+                driver.VerificationCode = newCode;
+                await _db.SaveChangesAsync();
+
+                _ = Task.Run(async () =>
+                {
+                    try { await _emailService.SendVerificationEmail(driver.Email, newCode); }
+                    catch (Exception e) { Console.WriteLine($"⚠️ Resend email hatası: {e.Message}"); }
+                });
+
+                Console.WriteLine($"📧 Yeni doğrulama kodu gönderildi: {driver.Email}");
+                return Ok(new { message = "Yeni doğrulama kodu emailinize gönderildi", debugCode = newCode });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest req)
         {
@@ -288,4 +316,5 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
     public record SignupRequest(string Email, string Password, string TaxiStandId, string TaxiStandName, string DriverName, string VehiclePlate);
     public record VerifyRequest(string DriverId, string Code);
     public record LoginRequest(string Email, string Password);
+    public record ResendDriverCodeRequest(string DriverId);
 }
