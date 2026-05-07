@@ -280,6 +280,33 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             }
         }
 
+        // ─── ADMIN: Kullanıcıyı zorla doğrula (email gelmediğinde) ───
+        // POST /api/user/force-verify/{userId}?secret=admin123
+        [HttpPost("force-verify/{userId}")]
+        public async Task<IActionResult> ForceVerify(string userId, [FromQuery] string secret)
+        {
+            var adminSecret = _config["Admin:Secret"] ?? "admin123";
+            if (secret != adminSecret)
+                return Unauthorized(new { error = "Geçersiz admin anahtarı" });
+
+            try
+            {
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                if (user == null) return NotFound(new { error = "Kullanıcı bulunamadı" });
+
+                user.IsVerified = true;
+                user.VerificationCode = null;
+                await _db.SaveChangesAsync();
+
+                Console.WriteLine($"✅ ADMIN: Kullanıcı zorla doğrulandı: {user.Email}");
+                return Ok(new { message = $"{user.Email} doğrulandı", id = user.Id, email = user.Email });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
         // ─── ADMIN: Tüm kullanıcıları listele ───
         // GET /api/user/all?secret=admin123
         [HttpGet("all")]
