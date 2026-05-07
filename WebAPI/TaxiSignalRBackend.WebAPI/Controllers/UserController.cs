@@ -280,6 +280,21 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             }
         }
 
+        // ─── ADMIN: Config debug ───
+        // GET /api/user/debug-config?secret=admin123
+        [HttpGet("debug-config")]
+        public IActionResult DebugConfig([FromQuery] string secret)
+        {
+            var adminSecret = _config["Admin:Secret"] ?? "admin123";
+            if (secret != adminSecret) return Unauthorized();
+            return Ok(new {
+                clientId    = (_config["Gmail:ClientId"]     ?? "NULL").Substring(0, Math.Min(15, (_config["Gmail:ClientId"] ?? "NULL").Length)) + "...",
+                secretStart = (_config["Gmail:ClientSecret"] ?? "NULL").Substring(0, Math.Min(8,  (_config["Gmail:ClientSecret"] ?? "NULL").Length)) + "...",
+                tokenStart  = (_config["Gmail:RefreshToken"] ?? "NULL").Substring(0, Math.Min(10, (_config["Gmail:RefreshToken"] ?? "NULL").Length)) + "...",
+                fromEmail   = _config["Gmail:FromEmail"] ?? "NULL"
+            });
+        }
+
         // ─── ADMIN: Email test (hatayı direkt görmek için) ───
         // POST /api/user/test-email?secret=admin123&to=test@gmail.com
         [HttpPost("test-email")]
