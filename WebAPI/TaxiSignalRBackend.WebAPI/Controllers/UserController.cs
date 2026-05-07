@@ -280,29 +280,47 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             }
         }
 
-        // ─── ADMIN: Kullanıcıyı zorla doğrula (email gelmediğinde) ───
-        // POST /api/user/force-verify/{userId}?secret=admin123
-        [HttpPost("force-verify/{userId}")]
-        public async Task<IActionResult> ForceVerify(string userId, [FromQuery] string secret)
+        // ─── Doğrulama kodunu yeniden gönder ───
+        // POST /api/user/resend-code
+        // body: { "userId": "..." }
+        [HttpPost("resend-code")]
+        public async Task<IActionResult> ResendCode([FromBody] ResendCodeRequest req)
         {
-            var adminSecret = _config["Admin:Secret"] ?? "admin123";
-            if (secret != adminSecret)
-                return Unauthorized(new { error = "Geçersiz admin anahtarı" });
-
             try
             {
-                var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == req.UserId);
                 if (user == null) return NotFound(new { error = "Kullanıcı bulunamadı" });
 
-                user.IsVerified = true;
-                user.VerificationCode = null;
+                if (user.IsVerified)
+                    return BadRequest(new { error = "Hesap zaten doğrulanmış" });
+
+                var newCode = new Random().Next(100000, 999999).ToString();
+                user.VerificationCode = newCode;
                 await _db.SaveChangesAsync();
 
-                Console.WriteLine($"✅ ADMIN: Kullanıcı zorla doğrulandı: {user.Email}");
-                return Ok(new { message = $"{user.Email} doğrulandı", id = user.Id, email = user.Email });
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _emailService.SendVerificationEmail(user.Email, newCode);
+                        Console.WriteLine($"📧 Yeni doğrulama kodu gönderildi: {user.Email}");
+                    }
+                    catch (Exception emailEx)
+                    {
+                        Console.WriteLine($"⚠️ Email gönderilemedi: {emailEx.Message}");
+                    }
+                });
+
+                return Ok(new
+                {
+                    message = "Yeni doğrulama kodu emailinize gönderildi",
+                    userId = user.Id,
+                    debugCode = newCode
+                });
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"💥 RESEND CODE HATASI: {ex.Message}");
                 return StatusCode(500, new { error = ex.Message });
             }
         }
@@ -557,6 +575,7 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
     public record UserSignupRequest(string Email, string Password, string FullName, string? PhoneNumber);
     public record UserVerifyRequest(string UserId, string Code);
     public record UserLoginRequest(string Email, string Password);
+    public record ResendCodeRequest(string UserId);
     public record AddCardRequest(string UserId, string CardCode, string? CardNickname);
     public record TopUpRequest(string CardCode, decimal Amount);
 }
