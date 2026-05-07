@@ -280,6 +280,24 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             }
         }
 
+        // ─── ADMIN: Email test (hatayı direkt görmek için) ───
+        // POST /api/user/test-email?secret=admin123&to=test@gmail.com
+        [HttpPost("test-email")]
+        public async Task<IActionResult> TestEmail([FromQuery] string secret, [FromQuery] string to)
+        {
+            var adminSecret = _config["Admin:Secret"] ?? "admin123";
+            if (secret != adminSecret) return Unauthorized(new { error = "Geçersiz admin anahtarı" });
+            try
+            {
+                await _emailService.SendVerificationEmail(to, "123456");
+                return Ok(new { message = $"Email başarıyla gönderildi: {to}" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message, detail = ex.ToString() });
+            }
+        }
+
         // ─── Doğrulama kodunu yeniden gönder ───
         // POST /api/user/resend-code
         // body: { "userId": "..." }
