@@ -72,10 +72,21 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
-    Console.WriteLine("✅ Veritabanı oluşturuldu: taxi.db");
+    try
+    {
+        db.Database.Migrate();
+        Console.WriteLine("✅ Veritabanı migration tamamlandı");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠️ Migration başarısız, EnsureCreated deneniyor: {ex.Message}");
+        db.Database.EnsureCreated();
+        Console.WriteLine("✅ Veritabanı EnsureCreated ile hazır");
+    }
 }
 
+// ─── Health check endpoint (Railway.app ping için) ───
+app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>

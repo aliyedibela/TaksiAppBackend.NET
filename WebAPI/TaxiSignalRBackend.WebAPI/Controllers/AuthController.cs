@@ -66,16 +66,20 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 await _db.SaveChangesAsync();
                 Console.WriteLine($"✅ Veritabanına kaydedildi. Driver ID: {driver.Id}");
 
-                try
+                // Email gönderimini background'da yap — HTTP response beklemeden döner
+                _ = Task.Run(async () =>
                 {
-                    await _emailService.SendVerificationEmail(req.Email, code);
-                    Console.WriteLine("✅ Email başarıyla gönderildi!");
-                }
-                catch (Exception emailEx)
-                {
-                    Console.WriteLine($"⚠️ EMAIL GÖNDERİMİ BAŞARISIZ: {emailEx.Message}");
-                    Console.WriteLine($"⚠️ Debug kodu: {code}");
-                }
+                    try
+                    {
+                        await _emailService.SendVerificationEmail(req.Email, code);
+                        Console.WriteLine("✅ Email başarıyla gönderildi!");
+                    }
+                    catch (Exception emailEx)
+                    {
+                        Console.WriteLine($"⚠️ EMAIL GÖNDERİMİ BAŞARISIZ: {emailEx.Message}");
+                        Console.WriteLine($"⚠️ Debug kodu: {code}");
+                    }
+                });
 
                 Console.WriteLine("✅ KAYIT BAŞARIYLA TAMAMLANDI!");
                 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");

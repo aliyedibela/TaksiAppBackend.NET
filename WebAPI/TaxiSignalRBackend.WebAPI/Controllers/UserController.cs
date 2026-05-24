@@ -51,15 +51,19 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
                 _db.Users.Add(user);
                 await _db.SaveChangesAsync();
 
-                try
+                // Email gönderimini background'da yap — HTTP response beklemeden döner
+                _ = Task.Run(async () =>
                 {
-                    await _emailService.SendVerificationEmail(req.Email, code);
-                    Console.WriteLine($"✅ Doğrulama emaili gönderildi: {req.Email}");
-                }
-                catch (Exception emailEx)
-                {
-                    Console.WriteLine($"⚠️ Email gönderilemedi: {emailEx.Message}");
-                }
+                    try
+                    {
+                        await _emailService.SendVerificationEmail(req.Email, code);
+                        Console.WriteLine($"✅ Doğrulama emaili gönderildi: {req.Email}");
+                    }
+                    catch (Exception emailEx)
+                    {
+                        Console.WriteLine($"⚠️ Email gönderilemedi: {emailEx.Message}");
+                    }
+                });
 
                 return Ok(new
                 {
@@ -206,6 +210,139 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
             catch (Exception ex)
             {
                 Console.WriteLine($"💥 LOGIN HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("resend-code")]
+        public async Task<IActionResult> ResendCode([FromBody] ResendCodeRequest req)
+        {
+            try
+            {
+                var user = await _db.Users.FindAsync(req.UserId);
+                if (user == null) return NotFound(new { error = "Kullanıcı bulunamadı" });
+                if (user.IsVerified) return BadRequest(new { error = "Hesap zaten doğrulanmış" });
+
+                var code = new Random().Next(100000, 999999).ToString();
+                user.VerificationCode = code;
+                await _db.SaveChangesAsync();
+
+                _ = Task.Run(async () =>
+                {
+                    try { await _emailService.SendVerificationEmail(user.Email, code); }
+                    catch (Exception ex) { Console.WriteLine($"⚠️ Kod tekrar gönderilemedi: {ex.Message}"); }
+                });
+
+                return Ok(new { message = "Doğrulama kodu tekrar gönderildi" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req)
+        {
+            try
+            {
+                Console.WriteLine($"🔑 FORGOT PASSWORD: {req.Email}");
+
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == req.Email);
+                // Güvenlik: kullanıcı yoksa bile başarılı döndür (email enumeration önleme)
+                if (user == null)
+                    return Ok(new { message = "Eğer bu email kayıtlıysa sıfırlama kodu gönderildi" });
+
+                var code = new Random().Next(100000, 999999).ToString();
+                user.VerificationCode = code;
+                await _db.SaveChangesAsync();
+
+                _ = Task.Run(async () =>
+                {
+                    try { await _emailService.SendPasswordResetEmail(user.Email, code); }
+                    catch (Exception ex) { Console.WriteLine($"⚠️ Şifre sıfırlama emaili gönderilemedi: {ex.Message}"); }
+                });
+
+                Console.WriteLine($"✅ Şifre sıfırlama kodu gönderildi: {req.Email}");
+                return Ok(new { message = "Sıfırlama kodu emailinize gönderildi", debugCode = code });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 FORGOT PASSWORD HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest req)
+        {
+            try
+            {
+                Console.WriteLine($"🔑 RESET PASSWORD: {req.Email}");
+
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == req.Email);
+                if (user == null) return NotFound(new { error = "Kullanıcı bulunamadı" });
+
+                if (user.VerificationCode != req.Code)
+                    return BadRequest(new { error = "Geçersiz veya süresi dolmuş kod" });
+
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+                user.VerificationCode = null;
+                await _db.SaveChangesAsync();
+
+                Console.WriteLine($"✅ Şifre güncellendi: {req.Email}");
+                return Ok(new { message = "Şifreniz başarıyla güncellendi" });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 RESET PASSWORD HATASI: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        // ─── ADMIN: Tüm kullanıcıları listele ───
+        // GET /api/user/all?secret=ADMIN_SECRET
+        [HttpGet("all")]
+        public async Task<IActionResult> GetAllUsers([FromQuery] string secret)
+        {
+            var adminSecret = _config["Admin:Secret"] ?? "admin123";
+            if (secret != adminSecret)
+                return Unauthorized(new { error = "Geçersiz admin anahtarı" });
+
+            try
+            {
+                var users = await _db.Users
+                    .Include(u => u.Cards)
+                    .OrderByDescending(u => u.CreatedAt)
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    total = users.Count,
+                    verified = users.Count(u => u.IsVerified),
+                    unverified = users.Count(u => !u.IsVerified),
+                    users = users.Select(u => new
+                    {
+                        id = u.Id,
+                        fullName = u.FullName,
+                        email = u.Email,
+                        phoneNumber = u.PhoneNumber,
+                        isVerified = u.IsVerified,
+                        createdAt = u.CreatedAt,
+                        cardCount = u.Cards.Count,
+                        cards = u.Cards.Select(c => new
+                        {
+                            cardCode = c.CardCode,
+                            cardNickname = c.CardNickname,
+                            balance = c.Balance,
+                            addedAt = c.AddedAt
+                        })
+                    })
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 GET ALL USERS HATASI: {ex.Message}");
                 return StatusCode(500, new { error = ex.Message });
             }
         }
@@ -413,6 +550,9 @@ namespace TaxiSignalRBackend.WebAPI.Controllers
     public record UserSignupRequest(string Email, string Password, string FullName, string? PhoneNumber);
     public record UserVerifyRequest(string UserId, string Code);
     public record UserLoginRequest(string Email, string Password);
+    public record ResendCodeRequest(string UserId);
+    public record ForgotPasswordRequest(string Email);
+    public record ResetPasswordRequest(string Email, string Code, string NewPassword);
     public record AddCardRequest(string UserId, string CardCode, string? CardNickname);
     public record TopUpRequest(string CardCode, decimal Amount);
 }
