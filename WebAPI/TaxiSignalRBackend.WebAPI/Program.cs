@@ -86,7 +86,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ─── Health check endpoint (Railway.app ping için) ───
-app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
+app.MapMethods("/health", new[] { "GET", "HEAD" }, () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
