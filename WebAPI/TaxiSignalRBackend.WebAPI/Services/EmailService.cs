@@ -24,38 +24,40 @@ namespace TaxiSignalRBackend.WebAPI.Services
             Console.WriteLine($"✅ Şifre sıfırlama emaili gönderildi: {toEmail}");
         }
 
-        private async Task SendEmail(string toEmail, string subject, string htmlBody)
-        {
-            var accessToken = await GetAccessTokenAsync();
+      private async Task SendEmail(string toEmail, string subject, string htmlBody)
+{
+    var accessToken = await GetAccessTokenAsync();
 
-            var raw = $"From: Erzurum BB App <{GmailUser}>\r\n" +
-                      $"To: {toEmail}\r\n" +
-                      $"Subject: {subject}\r\n" +
-                      $"MIME-Version: 1.0\r\n" +
-                      $"Content-Type: text/html; charset=utf-8\r\n\r\n" +
-                      htmlBody;
+    var subjectBytes = Encoding.UTF8.GetBytes(subject);
+    var encodedSubject = $"=?utf-8?B?{Convert.ToBase64String(subjectBytes)}?=";
 
-            var base64Url = Convert.ToBase64String(Encoding.UTF8.GetBytes(raw))
-                .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+    var raw = $"From: Erzurum BB App <{GmailUser}>\r\n" +
+              $"To: {toEmail}\r\n" +
+              $"Subject: {encodedSubject}\r\n" +
+              $"MIME-Version: 1.0\r\n" +
+              $"Content-Type: text/html; charset=utf-8\r\n\r\n" +
+              htmlBody;
 
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", accessToken);
+    var base64Url = Convert.ToBase64String(Encoding.UTF8.GetBytes(raw))
+        .Replace('+', '-').Replace('/', '_').TrimEnd('=');
 
-            var payload = JsonSerializer.Serialize(new { raw = base64Url });
-            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+    using var http = new HttpClient();
+    http.DefaultRequestHeaders.Authorization =
+        new AuthenticationHeaderValue("Bearer", accessToken);
 
-            var response = await http.PostAsync(
-                $"https://gmail.googleapis.com/gmail/v1/users/{GmailUser}/messages/send",
-                content);
+    var payload = JsonSerializer.Serialize(new { raw = base64Url });
+    var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var err = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Gmail API hatası: {response.StatusCode} — {err}");
-            }
-        }
+    var response = await http.PostAsync(
+        $"https://gmail.googleapis.com/gmail/v1/users/{GmailUser}/messages/send",
+        content);
 
+    if (!response.IsSuccessStatusCode)
+    {
+        var err = await response.Content.ReadAsStringAsync();
+        throw new Exception($"Gmail API hatası: {response.StatusCode} — {err}");
+    }
+}
         private static async Task<string> GetAccessTokenAsync()
         {
             using var http = new HttpClient();
